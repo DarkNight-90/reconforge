@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<nmaprun scanner="nmap" version="7.99">
+  <scaninfo type="syn" protocol="tcp" />
+  <host>
+    <status state="up" />
+    <address addr="192.168.1.10" addrtype="ipv4" />
+    <address addr="AA:BB:CC:DD:EE:FF" addrtype="mac" vendor="Example Vendor" />
+    <hostnames>
+      <hostname name="example.local" type="PTR" />
+      <hostname name="secondary.local" type="user" />
+    </hostnames>
+    <ports>
+      <port protocol="tcp" portid="22">
+        <state state="open" />
+        <service name="ssh" product="OpenSSH" version="9.6" extrainfo="Ubuntu" />
+      </port>
+      <port protocol="tcp" portid="80">
+        <state state="open" />
+        <service name="http" product="nginx" version="1.24.0" />
+      </port>
+      <port protocol="udp" portid="53">
+        <state state="open|filtered" />
+        <service name="domain" />
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Linux 5.x" accuracy="95">
+        <osclass vendor="Linux" osfamily="Linux" osgen="5.X" accuracy="95" type="general purpose" />
+      </osmatch>
+    </os>
+  </host>
+  <host>
+    <status state="up" />
+    <address addr="192.168.1.20" addrtype="ipv4" />
+    <ports>
+      <port protocol="tcp" portid="445">
+        <state state="filtered" />
+        <service name="microsoft-ds" />
+      </port>
+    </ports>
+    <os>
+      <osmatch name="Microsoft Windows 10" accuracy="90" />
+      <osmatch name="Linux 4.x" accuracy="45">
+        <osclass vendor="Linux" osfamily="Linux" osgen="4.X" accuracy="45" />
+        <osclass vendor="Linux" osfamily="Linux" osgen="3.X" accuracy="40" />
+      </osmatch>
+    </os>
+  </host>
+  <host>
+    <status state="up" />
+    <address addr="192.168.1.30" addrtype="ipv4" />
+  </host>
+  <runstats />
+</nmaprun>

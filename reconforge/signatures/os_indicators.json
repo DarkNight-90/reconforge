@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "windows": {
+    "services": {
+      "microsoft-ds": 5,
+      "msrpc": 4,
+      "netbios-ssn": 4,
+      "ms-wbt-server": 5,
+      "rdp": 5,
+      "smb": 5
+    },
+    "products": {
+      "Microsoft Terminal Services": 6,
+      "Microsoft": 5,
+      "Windows": 5
+    }
+  },
+  "unix": {
+    "services": {
+      "ssh": 2,
+      "openssh": 3,
+      "http": 0.5,
+      "https": 0.5,
+      "nginx": 1,
+      "apache": 1
+    },
+    "products": {
+      "OpenSSH": 3,
+      "nginx": 1,
+      "Apache": 1,
+      "Ubuntu": 4,
+      "Debian": 4,
+      "CentOS": 4,
+      "Red Hat": 4,
+      "Fedora": 4
+    }
+  }
+}
