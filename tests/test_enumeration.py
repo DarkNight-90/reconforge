@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import urllib.request
+from urllib.parse import urljoin
 
 from reconforge.core.models import (
     EnumerationDecision,
@@ -11,6 +13,41 @@ from reconforge.core.models import (
 from reconforge.core.repository import Repository
 from reconforge.enumeration.engine import EnumerationEngine
 from reconforge.enumeration.modules import HttpEnumerationModule, SshEnumerationModule
+
+
+def mock_http_response(monkeypatch, *, redirect: str | None = None) -> list[str]:
+    requested_urls: list[str] = []
+
+    class Response:
+        status = 200
+        headers = {"Content-Type": "text/html", "Server": "test"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        @staticmethod
+        def read(size: int) -> bytes:
+            return b"<html><title>Mock response</title></html>"
+
+    class Opener:
+        def __init__(self, handler) -> None:
+            self.redirect_handler = handler
+
+        def open(self, request, timeout: float):
+            requested_urls.append(request.full_url)
+            if redirect is not None:
+                destination = urljoin(request.full_url, redirect)
+                followed = self.redirect_handler.redirect_request(
+                    request, None, 302, "Found", {}, destination
+                )
+                requested_urls.append(followed.full_url)
+            return Response()
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda handler: Opener(handler))
+    return requested_urls
 
 
 def test_decision_engine_matches_http_and_ssh_without_port_only_assumption() -> None:
@@ -60,6 +97,30 @@ def test_decision_engine_matches_http_and_ssh_without_port_only_assumption() -> 
     assert smb_decision.status == EnumerationStatus.UNSUPPORTED
 
 
+def test_decision_engine_routes_https_to_tls_and_is_deterministic() -> None:
+    engine = EnumerationEngine()
+    targets = (
+        ("http", "nginx", "http"),
+        ("https", "nginx", "tls"),
+        ("ssh", "OpenSSH", "ssh"),
+    )
+    for service_name, product, expected_module in targets:
+        target = EnumerationTarget(
+            scan_id="scan-1",
+            host_id=1,
+            ip="192.168.1.20",
+            port=443 if service_name == "https" else 80,
+            protocol="tcp",
+            service_name=service_name,
+            product=product,
+        )
+        first = engine.decide(target)
+        second = engine.decide(target)
+        assert first.module == expected_module
+        assert second.module == first.module
+        assert second.reason == first.reason
+
+
 def test_http_module_collects_structured_evidence() -> None:
     class FakeHTTPClient:
         def fetch(self, url: str, timeout: float) -> dict[str, object]:
@@ -88,6 +149,53 @@ def test_http_module_collects_structured_evidence() -> None:
     assert result.module == "http"
     assert any(item.indicator == "server" and item.value == "nginx/1.24.0" for item in result.evidence)
     assert any(item.indicator == "title" and item.value == "Portal" for item in result.evidence)
+
+
+def test_http_module_fetches_normal_response_without_network(monkeypatch) -> None:
+    requested_urls = mock_http_response(monkeypatch)
+    target = EnumerationTarget("scan-1", 1, "127.0.0.1", 8080, service_name="http")
+    result = HttpEnumerationModule(timeout=1).enumerate(target)
+
+    assert result.status == EnumerationStatus.SUCCESS
+    assert requested_urls == ["http://127.0.0.1:8080/"]
+    assert any(item.indicator == "title" and item.value == "Mock response" for item in result.evidence)
+
+
+def test_http_module_allows_same_host_redirect(monkeypatch) -> None:
+    requested_urls = mock_http_response(monkeypatch, redirect="/final")
+    target = EnumerationTarget("scan-1", 1, "127.0.0.1", 8080, service_name="http")
+    result = HttpEnumerationModule(timeout=1).enumerate(target)
+
+    assert result.status == EnumerationStatus.SUCCESS
+    assert requested_urls == ["http://127.0.0.1:8080/", "http://127.0.0.1:8080/final"]
+
+
+def test_http_module_blocks_cross_host_redirect_without_following_it(monkeypatch) -> None:
+    requested_urls = mock_http_response(monkeypatch, redirect="http://127.0.0.2:8080/outside")
+    target = EnumerationTarget("scan-1", 1, "127.0.0.1", 8080, service_name="http")
+    result = HttpEnumerationModule(timeout=1).enumerate(target)
+
+    assert result.status == EnumerationStatus.FAILED
+    assert "outside the authorized target host" in (result.error_message or "")
+    assert requested_urls == ["http://127.0.0.1:8080/"]
+
+
+def test_http_module_preserves_timeout_and_error_statuses() -> None:
+    class FailingHTTPClient:
+        def __init__(self, error: Exception) -> None:
+            self.error = error
+
+        def fetch(self, url: str, timeout: float) -> dict[str, object]:
+            raise self.error
+
+    target = EnumerationTarget("scan-1", 1, "127.0.0.1", 80, service_name="http")
+    timeout_result = HttpEnumerationModule(
+        client=FailingHTTPClient(TimeoutError("request timeout"))
+    ).enumerate(target)
+    error_result = HttpEnumerationModule(client=FailingHTTPClient(OSError("connection refused"))).enumerate(target)
+
+    assert timeout_result.status == EnumerationStatus.TIMEOUT
+    assert error_result.status == EnumerationStatus.FAILED
 
 
 def test_ssh_module_parses_banner_and_keeps_output_bounded() -> None:

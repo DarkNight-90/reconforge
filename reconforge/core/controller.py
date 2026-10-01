@@ -78,6 +78,8 @@ class RepositoryProtocol(Protocol):
 
     def save_host(self, scan_id: str, host: Host) -> int: ...
 
+    def update_host(self, scan_id: str, host: Host) -> None: ...
+
 
 class ManifestValidationError(ControllerError, ValueError):
     """Raised when a manifest does not satisfy the execution-history contract."""
@@ -296,6 +298,7 @@ class ReconController:
             raise ControllerDependencyError(str(exc)) from exc
 
         merged_hosts: dict[str, Host] = {host.ip: host for host in self.repository.get_hosts(scan_id)}
+        persisted_host_ips = set(merged_hosts)
         phase_results: list[ManifestExecution] = list(manifest.executions)
         target = scan.target
         if self._ENUMERATION_PHASE in {item.phase for item in phase_results}:
@@ -315,7 +318,7 @@ class ReconController:
         for ip in sorted(merged_hosts):
             host = merged_hosts[ip]
             merged_hosts[ip] = replace(host, classification=self.classifier.classify(host))
-        self._persist_hosts(scan_id, merged_hosts)
+        self._persist_hosts(scan_id, merged_hosts, update_existing=persisted_host_ips)
         final_status = ScanStatus.COMPLETED
         error_message = next((item.stderr_summary for item in phase_results if item.status in {ExecutionStatus.FAILED, ExecutionStatus.TIMEOUT, ExecutionStatus.INTERRUPTED}), None)
         if any(item.status in {ExecutionStatus.FAILED, ExecutionStatus.TIMEOUT} for item in phase_results):
@@ -485,9 +488,12 @@ class ReconController:
             return manifest_execution, (), manifest
         return manifest_execution, observations, manifest
 
-    def _persist_hosts(self, scan_id: str, hosts: dict[str, Host]) -> None:
+    def _persist_hosts(self, scan_id: str, hosts: dict[str, Host], *, update_existing: set[str] | None = None) -> None:
         for ip in sorted(hosts):
-            self.repository.save_host(scan_id, hosts[ip])
+            if update_existing is not None and ip in update_existing:
+                self.repository.update_host(scan_id, hosts[ip])
+            else:
+                self.repository.save_host(scan_id, hosts[ip])
 
     def _enumerate_known_services(
         self,

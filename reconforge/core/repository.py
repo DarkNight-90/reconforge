@@ -314,6 +314,82 @@ class Repository:
             raise RepositoryError(f"unable to save host: {host.ip}") from exc
         return host_id
 
+    def update_host(self, scan_id: str, host: Host) -> None:
+        """Merge refreshed host observations into an existing host transactionally."""
+        try:
+            with self._connection() as connection:
+                row = connection.execute(
+                    "SELECT id FROM hosts WHERE scan_id = ? AND ip = ?", (scan_id, host.ip)
+                ).fetchone()
+                if row is None:
+                    raise RecordNotFoundError(f"host not found: {host.ip}")
+                host_id = int(row["id"])
+                connection.execute(
+                    """UPDATE hosts SET
+                    hostname = COALESCE(?, hostname),
+                    mac_address = COALESCE(?, mac_address),
+                    vendor = COALESCE(?, vendor),
+                    state = ?,
+                    os_family = COALESCE(?, os_family),
+                    os_confidence = COALESCE(?, os_confidence)
+                    WHERE id = ?""",
+                    (
+                        host.hostname,
+                        host.mac_address,
+                        host.vendor,
+                        host.state,
+                        host.classification.family.value if host.classification else None,
+                        host.classification.confidence.value if host.classification else None,
+                        host_id,
+                    ),
+                )
+                for service in host.services:
+                    connection.execute(
+                        """INSERT INTO services
+                        (host_id, port, protocol, state, service_name, product, version, extra_info)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(host_id, port, protocol) DO UPDATE SET
+                        state = excluded.state,
+                        service_name = COALESCE(excluded.service_name, services.service_name),
+                        product = COALESCE(excluded.product, services.product),
+                        version = COALESCE(excluded.version, services.version),
+                        extra_info = COALESCE(excluded.extra_info, services.extra_info)""",
+                        (
+                            host_id,
+                            service.port,
+                            service.protocol,
+                            service.state,
+                            service.service_name,
+                            service.product,
+                            service.version,
+                            service.extra_info,
+                        ),
+                    )
+                for fingerprint in host.os_fingerprints:
+                    evidence = _json_value(fingerprint.evidence, "fingerprint evidence")
+                    duplicate = connection.execute(
+                        """SELECT 1 FROM os_fingerprints
+                        WHERE host_id = ? AND vendor IS ? AND family IS ? AND generation IS ?
+                        AND accuracy IS ? AND evidence = ? AND source IS ? LIMIT 1""",
+                        (
+                            host_id,
+                            fingerprint.vendor,
+                            fingerprint.family,
+                            fingerprint.generation,
+                            fingerprint.accuracy,
+                            evidence,
+                            fingerprint.source,
+                        ),
+                    ).fetchone()
+                    if duplicate is None:
+                        self._insert_fingerprint(connection, host_id, fingerprint)
+        except RecordNotFoundError:
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise RepositoryIntegrityError(f"unable to update host: {host.ip}") from exc
+        except sqlite3.Error as exc:
+            raise RepositoryError(f"unable to update host: {host.ip}") from exc
+
     def get_hosts(self, scan_id: str) -> tuple[Host, ...]:
         """Retrieve hosts and their observations in deterministic IP order."""
         try:

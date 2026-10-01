@@ -22,6 +22,8 @@ from reconforge.core.models import (
     ScanResult,
     Service,
 )
+from reconforge.core.repository import Repository
+from reconforge.enumeration.engine import EnumerationEngine
 from reconforge.nmap.runner import NmapNotFoundError
 
 
@@ -110,7 +112,16 @@ def observations() -> dict[str, tuple[Host, ...]]:
     }
 
 
-def make_controller(tmp_path: Path, *, runner=None, parser=None, classifier=None, repository=None, reporter=None) -> ReconController:
+def make_controller(
+    tmp_path: Path,
+    *,
+    runner=None,
+    parser=None,
+    classifier=None,
+    repository=None,
+    reporter=None,
+    enumeration_engine=None,
+) -> ReconController:
     return ReconController(
         config(tmp_path),
         runner=runner or FakeRunner(),
@@ -118,6 +129,7 @@ def make_controller(tmp_path: Path, *, runner=None, parser=None, classifier=None
         classifier=classifier or FakeClassifier(),
         repository=repository or FakeRepository(),
         reporter=reporter or (lambda result: None),
+        enumeration_engine=enumeration_engine,
     )
 
 
@@ -240,3 +252,50 @@ def test_manifest_arguments_are_sanitized_by_runner_contract(tmp_path: Path) -> 
 
     assert "password" not in manifest_text.lower()
     assert "token" not in manifest_text.lower()
+
+
+def test_resume_updates_existing_hosts_and_preserves_observations(tmp_path: Path) -> None:
+    class UnsupportedEnumerationModule:
+        name = "unsupported"
+
+        @staticmethod
+        def supports(target):
+            return False
+
+    parsed = observations()
+    parsed["ports"] = (
+        Host(
+            "127.0.0.1",
+            services=(Service(22, "tcp", "open"),),
+            os_fingerprints=(OSFingerprint("Prior vendor", "Prior family", "old", 70, "prior"),),
+        ),
+    )
+    repository = Repository(tmp_path / "resume.sqlite")
+    enumeration_engine = EnumerationEngine((UnsupportedEnumerationModule(),))
+    initial = make_controller(
+        tmp_path,
+        runner=FakeRunner({"services": ExecutionStatus.FAILED}),
+        parser=FakeParser(parsed),
+        repository=repository,
+        enumeration_engine=enumeration_engine,
+    ).run("127.0.0.1")
+
+    assert initial.scan.status.value == "failed"
+    assert len(repository.get_hosts(initial.scan.id)) == 1
+
+    resumed = make_controller(
+        tmp_path,
+        runner=FakeRunner(),
+        parser=FakeParser(parsed),
+        repository=repository,
+        enumeration_engine=enumeration_engine,
+    ).resume_scan(initial.scan.id)
+
+    stored_hosts = repository.get_hosts(initial.scan.id)
+    assert resumed.scan.status.value == "completed"
+    assert len(stored_hosts) == 1
+    assert stored_hosts[0].services == (Service(22, "tcp", "open", "ssh", "OpenSSH", "9.6"),)
+    assert stored_hosts[0].os_fingerprints == (
+        OSFingerprint("Prior vendor", "Prior family", "old", 70, "prior"),
+        OSFingerprint("Linux", "Linux", "5.X", 95, "nmap"),
+    )

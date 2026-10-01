@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from ipaddress import ip_address
 import re
 from typing import Any
+import urllib.request
+from urllib.parse import urlsplit
 
 from ..core.models import (
     EnumerationEvidence,
@@ -31,6 +34,20 @@ class _BaseProtocolClient:
         raise NotImplementedError
 
 
+class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Allow HTTP redirects only when they stay on the requested host."""
+
+    def __init__(self, allowed_host: str | None) -> None:
+        super().__init__()
+        self.allowed_host = allowed_host
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        destination = urlsplit(newurl).hostname
+        if _normalized_redirect_host(destination) != _normalized_redirect_host(self.allowed_host):
+            raise ValueError("HTTP redirect destination is outside the authorized target host")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 @dataclass
 class _HttpResponse:
     status_code: int
@@ -43,11 +60,10 @@ class _HttpClient(_BaseProtocolClient):
         self.timeout = timeout
 
     def fetch(self, url: str, timeout: float) -> dict[str, Any]:
-        import urllib.error
-        import urllib.request
-
         request = urllib.request.Request(url, headers={"User-Agent": "ReconForge/0.1"})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        target_host = urlsplit(url).hostname
+        opener = urllib.request.build_opener(_SameHostRedirectHandler(target_host))
+        with opener.open(request, timeout=timeout) as response:
             payload = response.read(2048)
             page = payload.decode("utf-8", errors="replace")
             title_match = re.search(r"<title>(.*?)</title>", page, flags=re.I | re.S)
@@ -57,6 +73,16 @@ class _HttpClient(_BaseProtocolClient):
                 "headers": dict(response.headers.items()),
                 "title": title_match.group(1).strip() if title_match else None,
             }
+
+
+def _normalized_redirect_host(host: str | None) -> str | None:
+    if host is None:
+        return None
+    normalized = host.rstrip(".").casefold()
+    try:
+        return str(ip_address(normalized))
+    except ValueError:
+        return normalized
 
 
 class HttpEnumerationModule:
@@ -72,6 +98,8 @@ class HttpEnumerationModule:
     def supports(self, target: EnumerationTarget) -> bool:
         service_name = _normalize(target.service_name)
         product = _normalize(target.product)
+        if service_name.startswith("https") or product.startswith("https"):
+            return False
         if service_name.startswith("http") or product.startswith("http"):
             return True
         if "http" in service_name or "http" in product:
