@@ -92,6 +92,8 @@ Requirements: Python 3.11 or newer and Nmap installed separately and available a
 
 From the repository root, install the project in editable mode and run the CLI:
 
+The `192.0.2.0/24` target below is a documentation-only placeholder. Substitute a target you are authorized to scan before running the command.
+
 ```bash
 python -m pip install -e .
 reconforge version
@@ -112,13 +114,13 @@ Run the test suite from the repository root:
 pytest -q
 ```
 
-The suite covers target validation, models, Nmap profile/runner contracts, XML parsing, classification, SQLite persistence, scan orchestration and recovery, enumeration, correlation, diffing, coverage, CLI behavior, and reports. The full suite was run during this cleanup: **175 tests passed**.
+The suite covers target validation, models, Nmap profile/runner contracts, XML parsing, classification, SQLite persistence, scan orchestration and recovery, enumeration, correlation, diffing, coverage, CLI behavior, and reports. The full suite was run during this cleanup: **186 tests passed**.
 
 ## Current limitations and development status
 
 ReconForge is under active development and is not presented as a finished production product.
 
-- `reconforge show <IP>` is not implemented; `show` currently accepts a scan ID.
+- `reconforge show <scan-id>` displays scan phase history, artifact presence, and host/service summary. The planned `reconforge host <scan-id> <IP>` detail command is not yet implemented.
 - SQLite migrations are deferred.
 - The scan target interface currently supports IPv4 addresses and networks.
 
