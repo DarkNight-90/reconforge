@@ -14,6 +14,7 @@ The current CLI supports:
 reconforge scan <CIDR>
 reconforge scans
 reconforge hosts <scan-id>
+reconforge services <scan-id>
 reconforge show <scan-id>
 reconforge resume <scan-id>
 reconforge attack-surface <scan-id>
@@ -24,7 +25,7 @@ reconforge version
 
 Commands that operate on stored data accept `--data-dir <path>` to select a data directory. `scan` also accepts `--timeout <seconds>`. Attack-surface, diff, and coverage reports default to terminal output and support `--format json` and `--output <path>` for JSON files.
 
-`hosts` lists persisted host observations for one scan. `show` displays a scan's phase history, artifact presence, and host/service summary. `resume` plans and performs recovery for eligible incomplete scans.
+`hosts` lists persisted host observations for one scan. `services` lists the persisted service observations for a scan, grouped by host. `show` displays a scan's phase history, artifact presence, and host/service summary. `resume` plans and performs recovery for eligible incomplete scans.
 
 ## Scan workflow
 
@@ -117,7 +118,6 @@ The suite covers target validation, models, Nmap profile/runner contracts, XML p
 
 ReconForge is under active development and is not presented as a finished production product.
 
-- `reconforge services <scan-id>` is not implemented.
 - `reconforge show <IP>` is not implemented; `show` currently accepts a scan ID.
 - SQLite migrations are deferred.
 - The scan target interface currently supports IPv4 addresses and networks.

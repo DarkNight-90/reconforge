@@ -68,6 +68,10 @@ class ClassifierProtocol(Protocol):
 
 
 class RepositoryProtocol(Protocol):
+    def get_scan(self, scan_id: str) -> Scan: ...
+
+    def get_hosts(self, scan_id: str) -> tuple[Host, ...]: ...
+
     def create_scan(self, scan: Scan) -> None: ...
 
     def update_scan(self, scan: Scan) -> None: ...
@@ -204,6 +208,15 @@ class ReconController:
         """Return persisted hosts for an existing scan in repository order."""
         self.repository.get_scan(scan_id)
         return self.repository.get_hosts(scan_id)
+
+    def list_services(self, scan_id: str) -> tuple[tuple[str, Service], ...]:
+        """Return persisted services with their host IP for an existing scan."""
+        self.repository.get_scan(scan_id)
+        return tuple(
+            (host.ip, service)
+            for host in self.repository.get_hosts(scan_id)
+            for service in host.services
+        )
 
     def show_scan(self, scan_id: str) -> dict[str, object]:
         """Return a read-only, human-friendly summary for one scan."""

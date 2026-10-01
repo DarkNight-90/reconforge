@@ -54,13 +54,19 @@ def test_scan_rejects_invalid_target() -> None:
 
 
 def test_reserved_commands_return_not_implemented() -> None:
-    assert main(["services"]) == NOT_IMPLEMENTED_EXIT_CODE
     assert main(["show", "192.168.1.10"]) == NOT_IMPLEMENTED_EXIT_CODE
 
 
 def test_hosts_requires_scan_id() -> None:
     with pytest.raises(SystemExit) as exc_info:
         main(["hosts"])
+
+    assert exc_info.value.code == 2
+
+
+def test_services_requires_scan_id() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["services"])
 
     assert exc_info.value.code == 2
 

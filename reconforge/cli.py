@@ -13,7 +13,7 @@ from .core.models import AttackSurface, AttackSurfaceDiff, EvidenceCoverageRepor
 from .core.repository import RepositoryError
 from .logging_config import configure_logging
 from .reports.structured import serialize_report, write_report
-from .reports.terminal import render_attack_surface, render_attack_surface_diff, render_evidence_coverage, render_hosts
+from .reports.terminal import render_attack_surface, render_attack_surface_diff, render_evidence_coverage, render_hosts, render_services
 
 
 NOT_IMPLEMENTED_EXIT_CODE = 3
@@ -56,7 +56,9 @@ def build_parser() -> argparse.ArgumentParser:
     hosts_parser = subparsers.add_parser("hosts", help="list hosts discovered in a scan")
     hosts_parser.add_argument("scan_id", help="scan identifier")
     hosts_parser.add_argument("--data-dir", type=Path, help="configure the data directory")
-    subparsers.add_parser("services", help="list discovered services")
+    services_parser = subparsers.add_parser("services", help="list services discovered in a scan")
+    services_parser.add_argument("scan_id", help="scan identifier")
+    services_parser.add_argument("--data-dir", type=Path, help="configure the data directory")
     subparsers.add_parser("version", help="show ReconForge version")
     return parser
 
@@ -203,6 +205,16 @@ def main(argv: list[str] | None = None) -> int:
             controller = ReconController(_config_for_command(args))
             hosts = controller.list_hosts(args.scan_id)
             render_hosts(args.scan_id, hosts)
+            return 0
+        except (ControllerError, RepositoryError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    if args.command == "services":
+        try:
+            controller = ReconController(_config_for_command(args))
+            services = controller.list_services(args.scan_id)
+            render_services(args.scan_id, services)
             return 0
         except (ControllerError, RepositoryError) as exc:
             print(str(exc), file=sys.stderr)

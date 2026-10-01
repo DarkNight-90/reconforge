@@ -1,6 +1,6 @@
 """Concise terminal reporting for completed controller results."""
 
-from ..core.models import AttackSurface, AttackSurfaceDiff, EvidenceCoverageReport, Host, ScanResult, SurfaceChange
+from ..core.models import AttackSurface, AttackSurfaceDiff, EvidenceCoverageReport, Host, ScanResult, Service, SurfaceChange
 
 
 def render_hosts(scan_id: str, hosts: tuple[Host, ...]) -> None:
@@ -26,6 +26,31 @@ def render_hosts(scan_id: str, hosts: tuple[Host, ...]) -> None:
             print(f"  Confidence: {host.classification.confidence.value}")
         else:
             print("  OS: Unknown")
+        print()
+
+
+def render_services(scan_id: str, services: tuple[tuple[str, Service], ...]) -> None:
+    """Print persisted service observations for one scan."""
+    print("Services")
+    print("────────")
+    print(f"Scan: {scan_id}")
+    if not services:
+        print("No services found.")
+        return
+    print()
+    for host_ip, service in services:
+        print(f"Host: {host_ip}")
+        print(f"  Port: {service.port}/{service.protocol}")
+        print(f"  State: {service.state}")
+        if service.service_name:
+            print(f"  Service: {service.service_name}")
+        if service.product:
+            product_version = f" {service.version}" if service.version else ""
+            print(f"  Product: {service.product}{product_version}")
+        elif service.version:
+            print(f"  Version: {service.version}")
+        if service.extra_info:
+            print(f"  Extra info: {service.extra_info}")
         print()
 
 
